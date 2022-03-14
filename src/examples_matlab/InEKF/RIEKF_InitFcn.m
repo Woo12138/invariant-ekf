@@ -43,8 +43,8 @@ landmark_measurement_frequency = 1/20;
 static_bias_initialization = false;
 ekf_update_enabled = true;
 enable_kinematic_measurements = true;
-enable_landmark_measurements = false;
-enable_static_landmarks = false;
+enable_landmark_measurements = true;
+enable_static_landmarks = true;
 
 % Set inital IMU biases
 gyro_bias_init = [0;0;0];

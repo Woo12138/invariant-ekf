@@ -67,6 +67,7 @@ KMeans::~KMeans()
 }
 
 
+
 void KMeans::Cluster(const std::vector<std::vector<double>>& data, std::vector<int>& Label)
 {
 	int size = 0;
@@ -155,6 +156,68 @@ void KMeans::Cluster(const std::vector<std::vector<double>>& data, std::vector<i
 		GetLabel(x, &label);
 		Label.push_back(label);
 	}
+
+    
+
+    if(m_means[0][2]>=m_means[1][2])
+    {
+        if(m_means[0][2]>=m_means[2][2])
+        {
+            single_contect = 0;
+            if(m_means[1][2]>=m_means[2][2])
+            {
+                double_contect = 1;
+                no_contect = 2;
+            }
+            else
+            {
+                double_contect = 2;
+                no_contect = 1; 
+            }
+        } 
+        else 
+        {
+            single_contect = 2;
+            double_contect = 0;
+            no_contect = 1;
+        }
+    } 
+    else
+    {
+        if(m_means[0][2]<m_means[2][2])
+        {
+            no_contect = 0;
+            if(m_means[1][2]>=m_means[2][2])
+            {
+                single_contect = 1;
+                double_contect = 2;
+            }
+            else
+            {
+                single_contect = 2;
+                double_contect = 1; 
+            }
+        } 
+        else 
+        {
+            single_contect = 1;
+            double_contect = 0;
+            no_contect = 2;
+        }
+    }
+
+    double min = 1.0;
+
+    for (int i = 0; i < data.size(); i++)
+    {
+        if (Label[i] == double_contect)
+        {
+            double cos_q = data[i][2] / (sqrt(data[i][2] * data[i][2] + data[i][1] * data[i][1] + data[i][0] * data[i][0]));
+            if (min > cos_q) min = cos_q;
+        }
+    }
+    cos_Max_dev = min;
+
 	delete[] counts;
 	delete[] x;
 	for (int i = 0; i < m_clusterNum; i++)
@@ -230,6 +293,31 @@ double KMeans::CalcDistance(const double* x, const double* u, int dimNum)
 		temp += (x[d] - u[d]) * (x[d] - u[d]);
 	}
 	return sqrt(temp);
+}
+
+vector<vector<double>> KMeans::get_means()
+{
+	vector<vector<double>> means;
+	for (int i = 0; i < m_clusterNum; i++)
+	{
+		vector<double> temp;
+		for (int d = 0; d < m_dimNum; d++)
+		{
+			temp.push_back(m_means[i][d]);
+		}
+		means.push_back(temp);
+	}
+	return means;
+}
+
+
+double KMeans::get_Contact_probability(const double* test_data,double cd)
+{
+    double cos_q = m_means[single_contect][2] / (sqrt(m_means[single_contect][2] * m_means[single_contect][2] + m_means[single_contect][1] * m_means[single_contect][1] + m_means[single_contect][0] * m_means[single_contect][0]));
+    double cm = (cos_q + cos_Max_dev)/2;
+    double cos_test = test_data[2] / (sqrt(test_data[2] * test_data[2] + test_data[1] * test_data[1] + test_data[0] * test_data[0]));
+    double P = 1 / (1 + exp(cd * (cm - cos_test)));
+    return P;
 }
 
 ostream& operator<<(ostream& out, KMeans& kmeans)
@@ -462,6 +550,7 @@ void InEKF::CorrectLandmarks(const vectorLandmarks& measured_landmarks) {
         map<int,int>::iterator it_estimated = estimated_landmarks_.find(it->id);
         if (it_prior!=prior_landmarks_.end()) {
             // Found in prior landmark set
+            //std::cout << "prior_OK" <<std::endl;
             int dimX = state_.dimX();
             int dimP = state_.dimP();
             int startIndex;
@@ -505,6 +594,7 @@ void InEKF::CorrectLandmarks(const vectorLandmarks& measured_landmarks) {
 
         } else if (it_estimated!=estimated_landmarks_.end()) {;
             // Found in estimated landmark set
+            //std::cout << "prior_buOK" <<std::endl;
             int dimX = state_.dimX();
             int dimP = state_.dimP();
             int startIndex;
@@ -547,7 +637,6 @@ void InEKF::CorrectLandmarks(const vectorLandmarks& measured_landmarks) {
             PI.block(startIndex,startIndex2,3,dimX) = Eigen::MatrixXd::Zero(3,dimX);
             PI.block(startIndex,startIndex2,3,3) = Eigen::Matrix3d::Identity();
 
-
         } else {
             // First time landmark as been detected (add to list for later state augmentation)
             new_landmarks.push_back(*it);
@@ -559,7 +648,7 @@ void InEKF::CorrectLandmarks(const vectorLandmarks& measured_landmarks) {
     if (!obs.empty()) {
         this->Correct(obs);
     }
-
+//--------------------------------------------------------------------
     // Augment state with newly detected landmarks
     if (new_landmarks.size() > 0) {
         Eigen::MatrixXd X_aug = state_.getX(); 
@@ -589,6 +678,7 @@ void InEKF::CorrectLandmarks(const vectorLandmarks& measured_landmarks) {
 
             // Add to list of estimated landmarks
             estimated_landmarks_.insert(pair<int,int> (it->id, startIndex));
+            std::cout <<  startIndex << std::endl;
         }
     }
     return;    
@@ -763,6 +853,203 @@ void InEKF::CorrectKinematics(const vectorKinematics& measured_kinematics) {
     return;
 }
 
+void InEKF::CorrectLandmarks2(const vectorLandmarks& measured_landmarks) {
+#if INEKF_USE_MUTEX
+    lock_guard<mutex> mlock(estimated_landmarks_mutex_);
+#endif
+    Eigen::VectorXd Y;
+    Eigen::VectorXd b;
+    Eigen::MatrixXd H;
+    Eigen::MatrixXd N;
+    Eigen::MatrixXd PI;
+
+    Eigen::Matrix3d R = state_.getRotation();
+    vectorLandmarks new_landmarks;
+    vector<int> used_landmark_ids;
+    vector<pair<int,int> > remove_landmark;
+
+    
+    for (vectorLandmarksIterator it=measured_landmarks.begin(); it!=measured_landmarks.end(); ++it) {
+        // Detect and skip if an ID is not unique (this would cause singularity issues in InEKF::Correct)
+        if (find(used_landmark_ids.begin(), used_landmark_ids.end(), it->id) != used_landmark_ids.end()) { 
+            cout << "Duplicate landmark ID detected! Skipping measurement.\n";
+            continue; 
+        } else { used_landmark_ids.push_back(it->id); }
+
+        // See if we can find id in prior_landmarks or estimated_landmarks
+        mapIntVector3dIterator it_prior = prior_landmarks_.find(it->id);
+        map<int,int>::iterator it_estimated = estimated_landmarks_.find(it->id);
+        if (it_prior!=prior_landmarks_.end()) {
+            // Found in prior landmark set
+            //std::cout << "prior_OK" <<std::endl;
+            int dimX = state_.dimX();
+            int dimP = state_.dimP();
+            int startIndex;
+
+            // Fill out Y
+            startIndex = Y.rows();
+            Y.conservativeResize(startIndex+dimX, Eigen::NoChange);
+            Y.segment(startIndex,dimX) = Eigen::VectorXd::Zero(dimX);
+            Y.segment(startIndex,3) = it->position; // p_bl
+            Y(startIndex+4) = 1; 
+
+            // Fill out b
+            startIndex = b.rows();
+            b.conservativeResize(startIndex+dimX, Eigen::NoChange);
+            b.segment(startIndex,dimX) = Eigen::VectorXd::Zero(dimX);
+            b.segment(startIndex,3) = it_prior->second; // p_wl
+            b(startIndex+4) = 1;       
+
+            // Fill out H
+            startIndex = H.rows();
+            H.conservativeResize(startIndex+3, dimP);
+            H.block(startIndex,0,3,dimP) = Eigen::MatrixXd::Zero(3,dimP);
+            H.block(startIndex,0,3,3) = skew(it_prior->second); // skew(p_wl)
+            H.block(startIndex,6,3,3) = -Eigen::Matrix3d::Identity(); // -I
+
+            // Fill out N
+            startIndex = N.rows();
+            N.conservativeResize(startIndex+3, startIndex+3);
+            N.block(startIndex,0,3,startIndex) = Eigen::MatrixXd::Zero(3,startIndex);
+            N.block(0,startIndex,startIndex,3) = Eigen::MatrixXd::Zero(startIndex,3);
+            N.block(startIndex,startIndex,3,3) = R * noise_params_.getLandmarkCov() * R.transpose();
+
+            // Fill out PI      
+            startIndex = PI.rows();
+            int startIndex2 = PI.cols();
+            PI.conservativeResize(startIndex+3, startIndex2+dimX);
+            PI.block(startIndex,0,3,startIndex2) = Eigen::MatrixXd::Zero(3,startIndex2);
+            PI.block(0,startIndex2,startIndex,dimX) = Eigen::MatrixXd::Zero(startIndex,dimX);
+            PI.block(startIndex,startIndex2,3,dimX) = Eigen::MatrixXd::Zero(3,dimX);
+            PI.block(startIndex,startIndex2,3,3) = Eigen::Matrix3d::Identity();
+
+        } else if (it_estimated!=estimated_landmarks_.end()) {;
+            // Found in estimated landmark set
+            //std::cout << "prior_buOK" <<std::endl;
+            int dimX = state_.dimX();
+            int dimP = state_.dimP();
+            int startIndex;
+
+            // Fill out Y
+            startIndex = Y.rows();
+            Y.conservativeResize(startIndex+dimX, Eigen::NoChange);
+            Y.segment(startIndex,dimX) = Eigen::VectorXd::Zero(dimX);
+            Y.segment(startIndex,3) = it->position; // p_bl
+            Y(startIndex+4) = 1; 
+            Y(startIndex+it_estimated->second) = -1;       
+
+            // Fill out b
+            startIndex = b.rows();
+            b.conservativeResize(startIndex+dimX, Eigen::NoChange);
+            b.segment(startIndex,dimX) = Eigen::VectorXd::Zero(dimX);
+            b(startIndex+4) = 1;       
+            b(startIndex+it_estimated->second) = -1;       
+
+            // Fill out H
+            startIndex = H.rows();
+            H.conservativeResize(startIndex+3, dimP);
+            H.block(startIndex,0,3,dimP) = Eigen::MatrixXd::Zero(3,dimP);
+            H.block(startIndex,6,3,3) = -Eigen::Matrix3d::Identity(); // -I
+            H.block(startIndex,3*it_estimated->second-6,3,3) = Eigen::Matrix3d::Identity(); // I
+
+            // Fill out N
+            startIndex = N.rows();
+            N.conservativeResize(startIndex+3, startIndex+3);
+            N.block(startIndex,0,3,startIndex) = Eigen::MatrixXd::Zero(3,startIndex);
+            N.block(0,startIndex,startIndex,3) = Eigen::MatrixXd::Zero(startIndex,3);
+            N.block(startIndex,startIndex,3,3) = R * noise_params_.getLandmarkCov() * R.transpose();
+
+            // Fill out PI      
+            startIndex = PI.rows();
+            int startIndex2 = PI.cols();
+            PI.conservativeResize(startIndex+3, startIndex2+dimX);
+            PI.block(startIndex,0,3,startIndex2) = Eigen::MatrixXd::Zero(3,startIndex2);
+            PI.block(0,startIndex2,startIndex,dimX) = Eigen::MatrixXd::Zero(startIndex,dimX);
+            PI.block(startIndex,startIndex2,3,dimX) = Eigen::MatrixXd::Zero(3,dimX);
+            PI.block(startIndex,startIndex2,3,3) = Eigen::Matrix3d::Identity();
+
+        } else {
+            // First time landmark as been detected (add to list for later state augmentation)
+            new_landmarks.push_back(*it);
+        }
+       
+    }
+    // Correct state using stacked observation
+    Observation obs(Y,b,H,N,PI);
+    if (!obs.empty()) {
+        this->Correct(obs);
+    }
+
+
+//--------------------------------------------------------------------
+
+
+        Eigen::MatrixXd X_rem = state_.getX(); 
+        Eigen::MatrixXd P_rem = state_.getP();
+     
+
+        // Remove row and column from X
+        removeRowAndColumn(X_rem, 5);
+
+        // Remove 3 rows and columns from P
+        int startIndex = 3 + 3*(5-3);
+        removeRowAndColumn(P_rem, startIndex); // TODO: Make more efficient
+        removeRowAndColumn(P_rem, startIndex); // TODO: Make more efficient
+        removeRowAndColumn(P_rem, startIndex); // TODO: Make more efficient
+
+        // Update all indices for estimated_landmarks and estimated_contact_positions
+        for (map<int,int>::iterator it2=estimated_landmarks_.begin(); it2!=estimated_landmarks_.end(); ++it2) {
+            if (it2->second > 5) 
+                it2->second -= 1;
+        }
+        for (map<int,int>::iterator it2=estimated_contact_positions_.begin(); it2!=estimated_contact_positions_.end(); ++it2) {
+            if (it2->second > 5) 
+                it2->second -= 1;
+        }
+        // We also need to update the indices of remove_contacts in the case where multiple contacts are being removed at once
+        // for (vector<pair<int,int> >::iterator it2=it; it2!=remove_landmark.end(); ++it2) {
+        //     if (it2->second > 5) 
+        //         it2->second -= 1;
+        // }
+        
+        // Update state and covariance
+        state_.setX(X_rem);
+        state_.setP(P_rem);
+        
+    std::cout << "OK"<< std::endl;
+    // Augment state with newly detected landmarks
+    if (new_landmarks.size() > 0) {
+        Eigen::MatrixXd X_aug = state_.getX(); 
+        Eigen::MatrixXd P_aug = state_.getP();
+        Eigen::Vector3d p = state_.getPosition();
+        for (vectorLandmarksIterator it=new_landmarks.begin(); it!=new_landmarks.end(); ++it) {
+            // Initialize new landmark mean
+            int startIndex = X_aug.rows();
+            X_aug.conservativeResize(startIndex+1, startIndex+1);
+            X_aug.block(startIndex,0,1,startIndex) = Eigen::MatrixXd::Zero(1,startIndex);
+            X_aug.block(0,startIndex,startIndex,1) = Eigen::MatrixXd::Zero(startIndex,1);
+            X_aug(startIndex, startIndex) = 1;
+            X_aug.block(0,startIndex,3,1) = p + R*it->position;
+
+            // Initialize new landmark covariance - TODO:speed up
+            Eigen::MatrixXd F = Eigen::MatrixXd::Zero(state_.dimP()+3,state_.dimP()); 
+            F.block(0,0,state_.dimP()-state_.dimTheta(),state_.dimP()-state_.dimTheta()) = Eigen::MatrixXd::Identity(state_.dimP()-state_.dimTheta(),state_.dimP()-state_.dimTheta()); // for old X
+            F.block(state_.dimP()-state_.dimTheta(),6,3,3) = Eigen::Matrix3d::Identity(); // for new landmark
+            F.block(state_.dimP()-state_.dimTheta()+3,state_.dimP()-state_.dimTheta(),state_.dimTheta(),state_.dimTheta()) = Eigen::MatrixXd::Identity(state_.dimTheta(),state_.dimTheta()); // for theta
+            Eigen::MatrixXd G = Eigen::MatrixXd::Zero(F.rows(),3);
+            G.block(G.rows()-state_.dimTheta()-3,0,3,3) = R;
+            P_aug = (F*P_aug*F.transpose() + G*noise_params_.getLandmarkCov()*G.transpose()).eval();
+
+            // Update state and covariance
+            state_.setX(X_aug);
+            state_.setP(P_aug);
+
+            // Add to list of estimated landmarks
+            estimated_landmarks_.insert(pair<int,int> (it->id, startIndex));
+        }
+    }
+    return;     
+}
 
 void removeRowAndColumn(Eigen::MatrixXd& M, int index) {
     unsigned int dimX = M.cols();

@@ -101,6 +101,11 @@ public:
 	friend std::ostream& operator<<(std::ostream& out, KMeans& kmeans);
 	double GetLabel(const double* x, int* label);
 	double CalcDistance(const double* x, const double* u, int dimNum);
+    std::vector<std::vector<double>> get_means();
+    double get_Contact_probability(const double* test_data,double cd);
+    int Get_double_contect(){return double_contect;}
+    int Get_single_contect(){return single_contect;}
+    int Get_no_contect(){return no_contect;}
 
 private:
 	int m_dimNum;
@@ -109,7 +114,11 @@ private:
 
 	int m_initMode;
 	int m_maxIterNum;		
-	double m_endError;		
+	double m_endError;	
+    double cos_Max_dev;
+    int double_contect;
+    int single_contect;
+    int no_contect;	
 };
 
 class InEKF {
@@ -136,6 +145,7 @@ class InEKF {
         void Correct(const Observation& obs);
         void CorrectLandmarks(const vectorLandmarks& measured_landmarks);
         void CorrectKinematics(const vectorKinematics& measured_kinematics);
+        void CorrectLandmarks2(const vectorLandmarks& measured_landmarks);
 
     private:
         RobotState state_;
